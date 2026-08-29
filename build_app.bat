@@ -135,6 +135,7 @@ python -m PyInstaller ^
     --clean ^
     --onefile ^
     --windowed ^
+    --icon "icon.ico" ^
     --name "TaskCalendar-%TAG%" ^
     "dayflow.py"
 
