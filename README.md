@@ -32,7 +32,7 @@ You stay in control of your data.
 
 ### ⭐ Latest Windows Version
 
-**[⬇️ Download TaskCalendar for Windows — v1.0.1](https://github.com/CodeCrafterX9/Task-Calendar-App/releases/download/v1.0.1/TaskCalendar-v1.0.1.exe)**
+**[⬇️ Download TaskCalendar for Windows — v2.0.0](https://github.com/CodeCrafterX9/Task-Calendar-App/releases/download/TaskCalendar/TaskCalendar-v2.0.0.exe)**
 
 **No Python. No VS Code. No installation required.**
 
@@ -42,6 +42,7 @@ Simply download the `.exe` file and double-click it to start using TaskCalendar.
 
 | Version | Download | Release Date |
 |---|---|---|
+| **v2.0.0** | [⬇️ Download](https://github.com/CodeCrafterX9/Task-Calendar-App/releases/download/TaskCalendar/TaskCalendar-v2.0.0.exe) | **2026-08-31** |
 | **v1.0.1** | [⬇️ Download](https://github.com/CodeCrafterX9/Task-Calendar-App/releases/download/v1.0.1/TaskCalendar-v1.0.1.exe) | **2026-08-29** |
 | **v1.0.0** | [⬇️ Download](https://github.com/CodeCrafterX9/Task-Calendar-App/releases/download/v1.0.0/TaskCalendar-v1.0.exe) | **2026-08-28** |
 
