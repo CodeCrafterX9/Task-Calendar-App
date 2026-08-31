@@ -6,14 +6,54 @@ from datetime import datetime, date, timedelta
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+try:
+    from plyer import notification as plyer_notification
+    HAS_PLYER = True
+except ImportError:
+    plyer_notification = None
+    HAS_PLYER = False
+
+def get_app_dir():
+    """
+    Return a stable, writable folder for the app's data files.
+    Data survives EXE updates and works for different users.
+    """
+
+    data_dir = os.path.join(
+        os.path.expanduser("~"),
+        "TaskCalendar"
+    )
+
+    try:
+        os.makedirs(data_dir, exist_ok=True)
+
+        test_path = os.path.join(data_dir, ".write_test")
+
+        with open(test_path, "w", encoding="utf-8") as f:
+            f.write("ok")
+
+        os.remove(test_path)
+
+        return data_dir
+
+    except Exception:
+        # Last-resort fallback
+        if getattr(sys, "frozen", False):
+            return os.path.dirname(sys.executable)
+
+        return os.path.dirname(os.path.abspath(__file__))
+
+
 
 # ============================================================
 # CONFIG
 # ============================================================
 
-APP_NAME = "DayFlow — Personal Planner"
+APP_NAME = "TaskCalendar — Personal Planner"
 
-DATA_DIR = "planner_data"
+APP_DIR = get_app_dir()
+
+DATA_DIR =  os.path.join(APP_DIR, "planner_data")
 TASKS_FILE = os.path.join(DATA_DIR, "tasks.csv")
 PRODUCTIVITY_FILE = os.path.join(DATA_DIR, "productivity.csv")
 
@@ -28,6 +68,8 @@ TASK_FIELDS = [
     "status",
     "productivity",
     "review",
+    "reminder_offset",
+    "reminder_sent",
     "created_at",
 ]
 
@@ -203,6 +245,35 @@ def status_color(status):
     }.get(status, "#64748b")
 
 
+REMINDER_OPTIONS = {
+    "No reminder": None,
+    "At start time": 0,
+    "5 minutes before": 5,
+    "10 minutes before": 10,
+    "15 minutes before": 15,
+    "30 minutes before": 30,
+    "1 hour before": 60,
+    "2 hours before": 120,
+    "1 day before": 1440,
+}
+
+
+def reminder_label_from_offset(offset_value):
+    if offset_value in (None, ""):
+        return "No reminder"
+
+    try:
+        offset_value = int(offset_value)
+    except (TypeError, ValueError):
+        return "No reminder"
+
+    for label, minutes in REMINDER_OPTIONS.items():
+        if minutes == offset_value:
+            return label
+
+    return "No reminder"
+
+
 # ============================================================
 # MAIN APP
 # ============================================================
@@ -259,6 +330,9 @@ class DayFlow(tk.Tk):
         self.create_ui()
 
         self.show_schedule()
+
+        # Start background reminder checking
+        self.after(3000, self.check_reminders)
 
     # ========================================================
     # STYLE
@@ -1983,7 +2057,6 @@ class DayFlow(tk.Tk):
             textvariable=status_var,
             values=[
                 "All",
-                "Planned",
                 "In Progress",
                 "Completed",
                 "Cancelled"
@@ -2076,13 +2149,13 @@ class DayFlow(tk.Tk):
         }
 
         widths = {
-            "date": 125,
-            "task": 280,
-            "time": 180,
-            "duration": 100,
-            "priority": 100,
-            "status": 125,
-            "productivity": 120
+            "date": 115,
+            "task": 230,
+            "time": 150,
+            "duration": 90,
+            "priority": 90,
+            "status": 115,
+            "productivity": 100
         }
 
         for column in columns:
@@ -2802,8 +2875,11 @@ class DayFlow(tk.Tk):
         )
 
         window.geometry(
-            "580x690"
+            "580x750"
         )
+
+        window.minsize(520, 500)
+
 
         window.configure(
             bg=self.PANEL
@@ -2811,7 +2887,7 @@ class DayFlow(tk.Tk):
 
         window.transient(self)
         window.grab_set()
-        window.resizable(False, False)
+        window.resizable(True, True)
 
         tk.Label(
             window,
@@ -3128,6 +3204,33 @@ class DayFlow(tk.Tk):
             pady=(5, 13)
         )
 
+        # REMINDER
+        self.form_label(
+            form,
+            "Reminder"
+        )
+
+        reminder_var = tk.StringVar(
+            value=(
+                reminder_label_from_offset(
+                    task.get("reminder_offset", "")
+                )
+                if task
+                else "No reminder"
+            )
+        )
+
+        ttk.Combobox(
+            form,
+            textvariable=reminder_var,
+            values=list(REMINDER_OPTIONS.keys()),
+            state="readonly",
+            style="DayFlow.TCombobox"
+        ).pack(
+            fill="x",
+            pady=(5, 13)
+        )
+
         # DESCRIPTION
         self.form_label(
             form,
@@ -3136,7 +3239,7 @@ class DayFlow(tk.Tk):
 
         description = tk.Text(
             form,
-            height=9,
+            height=4,
             bg=self.CARD,
             fg=self.TEXT,
             insertbackground=self.TEXT,
@@ -3188,7 +3291,6 @@ class DayFlow(tk.Tk):
                 form,
                 textvariable=status_var,
                 values=[
-                    "Planned",
                     "In Progress",
                     "Completed",
                     "Cancelled"
@@ -3335,7 +3437,30 @@ class DayFlow(tk.Tk):
                 if not proceed:
                     return
 
+            reminder_label = reminder_var.get()
+
+            reminder_minutes = REMINDER_OPTIONS.get(
+                reminder_label
+            )
+
+            reminder_offset_value = (
+                str(reminder_minutes)
+                if reminder_minutes is not None
+                else ""
+            )
+
             if editing:
+
+                reminder_changed = (
+                    task.get("reminder_offset", "")
+                    != reminder_offset_value
+                )
+
+                time_changed = (
+                    task.get("date") != date_value
+                    or task.get("start_time")
+                    != format_time(start)
+                )
 
                 task["date"] = date_value
                 task["title"] = title
@@ -3348,6 +3473,10 @@ class DayFlow(tk.Tk):
                 task["description"] = desc
                 task["priority"] = priority
                 task["status"] = status_var.get()
+                task["reminder_offset"] = reminder_offset_value
+
+                if reminder_changed or time_changed:
+                    task["reminder_sent"] = ""
 
             else:
 
@@ -3366,6 +3495,8 @@ class DayFlow(tk.Tk):
                     "status": "Planned",
                     "productivity": "",
                     "review": "",
+                    "reminder_offset": reminder_offset_value,
+                    "reminder_sent": "",
                     "created_at": datetime.now().isoformat()
                 })
 
@@ -3949,6 +4080,167 @@ class DayFlow(tk.Tk):
         self.side_stats["completed"].configure(
             text=str(completed)
         )
+
+    # ========================================================
+    # REMINDERS
+    # ========================================================
+
+    def check_reminders(self):
+
+        now = datetime.now()
+
+        changed = False
+
+        for task in self.tasks:
+
+            if task.get("reminder_sent") == "1":
+                continue
+
+            offset_text = task.get("reminder_offset", "")
+
+            if not offset_text:
+                continue
+
+            try:
+                offset = int(offset_text)
+            except ValueError:
+                continue
+
+            if task.get("status") in ("Completed", "Cancelled"):
+                continue
+
+            task_date = parse_date(task.get("date", ""))
+
+            start_minutes = time_to_minutes(
+                task.get("start_time", "")
+            )
+
+            if task_date is None or start_minutes is None:
+                continue
+
+            task_start = (
+                datetime(
+                    task_date.year,
+                    task_date.month,
+                    task_date.day
+                )
+                + timedelta(minutes=start_minutes)
+            )
+
+            reminder_time = task_start - timedelta(
+                minutes=offset
+            )
+
+            if reminder_time <= now:
+
+                self.fire_reminder(task)
+
+                task["reminder_sent"] = "1"
+                changed = True
+
+        if changed:
+
+            write_csv(
+                TASKS_FILE,
+                TASK_FIELDS,
+                self.tasks
+            )
+
+            if self.current_view == "schedule":
+                self.draw_schedule_canvas()
+
+        # Check again in 20 seconds
+        self.after(20000, self.check_reminders)
+
+    def fire_reminder(self, task):
+
+        title = f"Reminder: {task.get('title', 'Task')}"
+
+        time_range = (
+            f"{format_time(task.get('start_time', ''))}"
+            f" - "
+            f"{format_time(task.get('end_time', ''))}"
+        )
+
+        message = time_range
+
+        description = task.get("description", "")
+
+        if description:
+            message += f"\n{description[:100]}"
+
+        self.send_notification(title, message)
+
+    def send_notification(self, title, message):
+
+        if HAS_PLYER:
+
+            try:
+                plyer_notification.notify(
+                    title=title,
+                    message=message,
+                    app_name=APP_NAME,
+                    timeout=10
+                )
+                return
+            except Exception:
+                pass
+
+        # Fallback: in-app popup if plyer is unavailable or fails
+        self.show_fallback_notification(title, message)
+
+    def show_fallback_notification(self, title, message):
+
+        popup = tk.Toplevel(self)
+
+        popup.overrideredirect(True)
+        popup.attributes("-topmost", True)
+        popup.configure(
+            bg=self.CARD,
+            highlightbackground=self.BLUE,
+            highlightthickness=2
+        )
+
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+
+        width = 320
+        height = 110
+
+        x = screen_w - width - 25
+        y = screen_h - height - 60
+
+        popup.geometry(f"{width}x{height}+{x}+{y}")
+
+        tk.Label(
+            popup,
+            text=title,
+            font=("Segoe UI", 10, "bold"),
+            fg=self.TEXT,
+            bg=self.CARD,
+            wraplength=290,
+            justify="left"
+        ).pack(
+            anchor="w",
+            padx=14,
+            pady=(12, 4)
+        )
+
+        tk.Label(
+            popup,
+            text=message,
+            font=("Segoe UI", 9),
+            fg=self.MUTED,
+            bg=self.CARD,
+            wraplength=290,
+            justify="left"
+        ).pack(
+            anchor="w",
+            padx=14
+        )
+
+        popup.after(8000, popup.destroy)
+        popup.bind("<Button-1>", lambda e: popup.destroy())
 
 
 # ============================================================
